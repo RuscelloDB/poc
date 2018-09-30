@@ -1,2 +1,116 @@
-# poc
-Initial PoC
+https://github.com/deephacks/RxLMDBEventStore Entry Point: https://github.com/EventStore/EventStore/blob/02e98bc67327c1dac7cfcba32b7a16ed2acaa067/src/EventStore.Core/ClusterVNode.cs
+https://www.slideshare.net/vhaydin/it-weekendukraine2013event-store
+
+Architecture design decisions
+
+1. Embedded storage engines
+- Why rocksdb and LMDB
+
+2. SEDA vs Disruptor
+- http://mechanitis.blogspot.com/2011/07/dissecting-disruptor-wiring-up.html
+
+3. Index Format
+
+4. UI / Management
+- Using Spring vs something else
+
+5. Subscriptions
+
+6. Protocol Support
+- Atom
+- HTTP
+- Thift
+
+7. Logging
+
+Do we want to use SLF4j with Logback? With Log4j2? Or do we want to use log4j2 directly?
+https://stackoverflow.com/questions/41498021/is-it-worth-to-use-slf4j-with-log4j2
+https://stackoverflow.com/questions/41633278/can-we-use-all-features-of-log4j2-if-we-use-it-along-with-slf4j-api/41635246#41635246
+I did the garbage-free portion of the above
+
+8. API
+
+
+HTTP API 
+
+Writing to a stream
+You write to a stream over HTTP using a POST request to the resource of the stream. 
+If the stream does not exist then the stream will be implicitly created.
+
+// Event Store
+In Event Store 3.X.X a post of application/json assumes the post data to be the actual event. 
+When you need to write multiple events, use application/vnd.eventstore.events+json instead.
+The event will be available in the stream. Some clients may not be able to generate a GUID (or may not want to generate a GUID) for the ID. 
+You need this ID for idempotence purposes but the server can generate it for you. If we were to leave off the ES-EventId header you would see different behavior:
+In this case Event Store has responded with a 301 redirect. 
+The location points to another URI that you can post the event to. This new URI will be idempotent for posting to even without an event ID.
+
+It is generally recommended to include an event ID if possible as it will result in fewer round trips between the client and the server.
+
+When posting to either the stream or to the returned redirect clients must include the EventType header. If you forget to include the header you will receive an error.
+
+Event Store Events Media Type
+Event store supports a custom media type for posting events application/vnd.eventstore.events (+json/+xml). This format allows for extra functionality that posting events as above does not. For example it allows you to post multiple events in a single batch.
+
+Create a Stream
+To create a stream, issue a POST request to the /streams/newstream resource:
+
+Appending Events
+To append events, issue a POST request to the same resource again and edit the message ID GUID:
+
+Data only events
+Version 3.7.0 of Event Store added support for the application/octet-stream content type to support data only events. When creating these events, you will need to provide the ES-EventType and ES-EventId headers and cannot have metadata associated with the Event. In the example below SGVsbG8gV29ybGQ= is the data you POST to the stream:
+
+Expected Version
+The expected version header is a number representing the version of the stream you read from. For example if you read from the stream and it was at version 5 then you expect it to be at version 5. This can allow for optimistic locking when multiple applications are reading/writing to streams. If your expected version is not the current version you will receive a HTTP status code of 400.
+
+There are some special values you can put into the expected version header.
+
+-2 states that this write should never conflict and should always succeed.
+-1 states that the stream should not exist at the time of the writing (this write will create it).
+0 states that the stream should exist but should be empty.
+
+Batch Writes
+You can include more than one write in a single post by placing multiple events inside of the array representing the events, you can include metadata.
+
+When you write multiple events in a single post, Event Store treats them transactionally, it writes all events together or all will fail.
+
+Idempotency
+Appends to streams are idempotent based upon the EventId assigned in your post. If you were to re-run the last cURL command it will return the same value again.
+
+This is important behaviour as this is how you implement error handling. If you receive a timeout, broken connection, no answer, etc from your HTTP POST then it's your responsibility is to retry the post. You must also keep the same uuid that you assigned to the event in the first POST.
+
+If you are using the expected version parameter with your message, then Event Store is 100% idempotent. If you use Any as your expected version value, Event Store will do its best to keep events idempotent but cannot assure that everything is fully idempotent and you will end up in 'at-least-once' messaging. Read this guide for more details on idempotency.
+
+This idempotency also applies to the URIs generated by the server if you post a body as an event without the ES-EventId header associated with the request:
+
+You can then post multiple times to the generated redirect URI and Event Store will make the requests will idempotent for you:
+
+
+Reading a stream
+Event Store exposes streams as a resource located at http(s)://{yourdomain.com}:{port}/streams/{stream}. If you issue a simple GET request to this resource you will receive a standard AtomFeed document as a response.
+
+Reading an event from a stream
+There some important aspects to notice here. The feed has one item in it, if there are more than one, then items are sorted from newest to oldest.
+
+For each entry, there are a series of links to the actual events, embedding data into a stream is covered later. To get an event, follow the alternate link and set your Accept headers to the mime type you would like the event in.
+
+The accepted content types for GET requests are:
+
+application/xml
+application/atom+xml
+application/json
+application/vnd.eventstore.atom+json
+text/xml
+text/html
+
+
+Deleting a Stream
+
+Competing Consumers
+
+Description Document
+
+Stream Metadata
+
+Optional HTTP Headers

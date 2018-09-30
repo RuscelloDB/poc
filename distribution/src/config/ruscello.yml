@@ -1,0 +1,43 @@
+---
+
+# application logs
+application-logs: "/var/log/ruscello"
+
+# Raft RuscolloConfiguration
+raft:
+  # The raft port should be open between all servers in a cluster.
+  # However, this port shouldn't be accessible from the internet.
+  port: 8090
+
+  # Where the raft logs are stored. The user running Ruscello will need read/write access.
+  dir: "/opt/ruscello/shared/data/raft"
+  debug: false
+
+# storage engine settings
+storage:
+  # TODO: where do we want to store data by default?
+  dir: "/var/lib/ruscello/"
+
+  # TODO: what should be the default and what should be call this setting?
+  # TODO: should we use fully qualified name? That way the logic wont need to change for each new storage engine?
+  # although that should just really be updating a case statement so thats not toooo bad
+  default-engine: "rocksdb"
+
+storage.engines.rocksdb:
+
+  # Maximum mmap open files, this will affect the virtual memory used by
+  # the process
+  max-open-files: 1000
+
+  # LRU cache size, LRU is used by rocksdb to store contents of the
+  # uncompressed sstables. You can use `m` or `g` prefix for megabytes
+  # and gigabytes, respectively.
+  lru-cache-size: "200m"
+
+
+storage.engines.lmdb:
+
+  map-size: "100g"
+
+
+...
